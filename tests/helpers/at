@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# -----------------------------------------------------------------------------
+# This script simulates the git command for automated testing scenarios.
+# -----------------------------------------------------------------------------
+
+declare -r NAME=${0##*/}
+declare -r BIN_DIR=$(cd $(dirname ${0}); pwd)
+declare -- PATH=${PATH/${BIN_DIR}/}
+
+export PATH
+
+echo "$(date +%FT%T) -- ${NAME} ${@}" >> ${BIN_DIR}/${NAME}.log
+
+case "${@}" in
+'-t '*) 
+  echo job 123456 at Sat Jan  1. 01:01:00 2022
+  ;;
+*) 
+  echo ${NAME} ${@}
+  ;;   
+esac

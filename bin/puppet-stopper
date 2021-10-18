@@ -1,0 +1,438 @@
+#!/usr/bin/env ruby
+
+# -----------------------------------------------------------------------------
+# Modules
+# -----------------------------------------------------------------------------
+require 'optparse'
+require 'optparse/time'
+require 'ostruct'
+
+# -----------------------------------------------------------------------------
+# Globals
+# -----------------------------------------------------------------------------
+PS_VERSION = '2021-10-19'.freeze
+BASE_DIR   = File.expand_path(File.join(File.dirname(__FILE__), '..'))
+
+# User check checks for root
+class User
+  def self.root?
+    @root = ENV['USER'].nil? || ENV['USER'] != 'root'
+    self
+  end
+
+  def self.or_exit!
+    return unless @root
+    Log.to_terminal('You have to run this programm as root')
+    exit
+  end
+end
+
+# -----------------------------------------------------------------------------
+
+# AgentLocker manages the writing and deleting the files and content
+# of the 'agent_disabled.lock' file.
+class AgentLocker
+  require 'fileutils'
+  require 'rubygems'
+  require 'json'
+
+  include FileUtils
+
+  LOCKFILE_BASE = 'agent_disabled.lock'.freeze
+
+  STATE_DIR = %w( 
+    /var/lib/puppet/state
+    /opt/puppetlabs/puppet/cache/state
+  )
+
+  def initialize
+    @data = read_json
+  end
+
+  def lock
+    save_json
+  end
+
+  def unlock
+    rm(lock_file) if locked?
+  end
+
+  def locked?
+    File.exist?(lock_file)
+  end
+
+  # Validate the status of the lockfile.
+  # This function is for scripts requiring exit codes.
+  def validate
+    return 0 unless locked?
+    return 101 if disabled_message.empty?
+    return 102 if end_time.to_s.empty?
+    return 0
+  end
+
+  private
+
+  # Meta method instead of static “attr accessors’
+  def method_missing(*args)
+    # this code works on ruby 1.8.7 and later
+    # important is the conversion to string for the key.
+    key = args.shift.to_s
+    if key =~ %r{=$}
+      @data[key[0...-1].to_sym] = args.shift
+    else
+      @data.fetch(key.to_sym, nil)
+    end
+  end
+
+  def save_json
+    File.open(lock_file, 'w') do |fh|
+      fh.write @data.to_json
+    end
+  end
+
+  def read_json
+    begin
+      File.exist?(lock_file)
+      JSON.parse(File.read(lock_file), :symbolize_names => true)
+    rescue
+      {}
+    end
+  end
+
+  def lock_file
+    return @lock_file if @lock_file
+    @lock_file = File.join(state_dir, LOCKFILE_BASE)
+  end
+
+  private
+
+  def state_dir
+    @state_dir = Config.state_dir if Config.state_dir
+    return @state_dir if @state_dir
+    STATE_DIR.each do |state_dir|
+      next unless File.exist?(state_path)
+      @state_dir = state_dir
+      break
+    end
+  end
+end
+
+# Issue messages to syslog or the terminal.
+module Log
+  require 'syslog'
+
+  PROGRAM = File.basename(__FILE__)
+  @logger = Syslog.open(PROGRAM, Syslog::LOG_PID)
+
+  class << self
+    # log to syslog and to terminal
+    def to_syslog(message)
+      @logger.info(message)
+      to_terminal(message)
+    end
+
+    # print padded message to terminal
+    def to_terminal(message)
+      puts
+      puts message
+      puts
+    end
+  end
+end
+
+# Overwrite and restore the “motd’ file.
+module Motd
+  MOTD_PATH   = '/etc/motd'
+  MOTD_BACKUP = '/etc/motd.puppetd-stopper.bak'
+  MOTD_FORMAT = "\nPuppet is locked on this host until " +
+                "%s for the following reason:\n \"%s\""
+  class << self
+    require 'fileutils'
+    include FileUtils
+
+    def puts(end_time, lock_key)
+      return unless File.exist?(MOTD_PATH)
+      if !File.exist?(MOTD_BACKUP)
+        cp(MOTD_PATH, MOTD_BACKUP)
+      end
+      message = format(MOTD_FORMAT, end_time.to_s, lock_key)
+      write_motd(message)
+    end
+
+    def revert
+      return unless File.exist?(MOTD_BACKUP)
+      mv(MOTD_BACKUP, MOTD_PATH)
+    end
+
+    private
+
+    def write_motd(message)
+      return unless File.exist?(MOTD_PATH)
+      File.open(MOTD_PATH, 'a') do |motd|
+        motd << message
+      end
+    end
+  end
+end
+
+# Add and/or remove 'at' jobs
+module AtJob
+  AT_TIME_FORMAT = '%Y%m%d%H%M.%S'
+
+  class << self
+    require 'time'
+
+    def add(time, command)
+      at_command = %(echo "#{command}" | at -t #{format_time(time)} 2>&1)
+      result     = `#{at_command}`.split(%r{\n})
+      raise "AtJob failed with exit status #{$?.exitstatus}" unless $?.success?
+      job_id(result)
+    end
+
+    def remove(job_id)
+      if job_id
+        `atrm #{job_id}`
+        return nil unless $?.success?
+      end
+    end
+
+    private
+
+    def format_time(time)
+      time = Time.parse(time) if String === time
+      time.strftime(AT_TIME_FORMAT)
+    end
+
+    def job_id(output)
+      job_id = nil
+      output.each do |line|
+        next unless line.include? 'job'
+        job_id = line.split[1]
+        break
+      end
+      job_id
+    end
+  end
+end
+
+# Logical glue to prevent puppet agent from running during the
+# hourly cycles.
+class PuppetStopper
+  SECONDS_PER_DAY = (60 * 60 * 24)
+  NOT_SPECIFIED   = 'reason not specified'
+  MISSING_MESSAGE = '<NOT SET>'
+  NOT_LOCKED      = 'puppet is not locked'
+  PS_NAME         = File.basename(__FILE__)
+  AT_COMMAND      = File.expand_path(__FILE__) + ' --unlock'
+
+  def initialize
+    @agent   = AgentLocker.new
+  end
+
+  def run
+    case Config.action
+    when :lock     then lock
+    when :unlock   then unlock
+    when :extend   then extend_lock
+    when :info     then info
+    when :validate then validate
+    when :version  then version
+    end
+  end
+
+  def disable_puppet
+    begin
+      @agent.end_time         = Time.now + (Config.days * SECONDS_PER_DAY)
+      @agent.disabled_message = Config.message || @agent.disabled_message
+      @agent.job_id           = AtJob.add(@agent.end_time, AT_COMMAND)
+      Motd.puts(@agent.end_time, @agent.disabled_message)
+      @agent.lock
+      Log.to_syslog (
+        %(puppet is locked with reason ') <<
+        @agent.disabled_message +
+        %(' and will automatically unlock on ) <<
+        @agent.end_time.to_s
+      )
+    rescue => err
+      Log.to_syslog('Failed to lock puppet. ' << err.message)
+    end
+  end
+
+  def enable_puppet
+    begin
+      AtJob.remove(@agent.job_id)
+      Motd.revert
+      @agent.unlock
+      Log.to_syslog('puppet has been unlocked')
+    rescue => err
+      Log.to_syslog('Failed to unlock puppet. ' << err.message)
+    end
+  end
+
+  def lock
+    if @agent.locked?
+      Log.to_terminal(
+        "Puppet is already locked. Use '#{PS_NAME} --info' to get more info"
+      )
+    else
+      disable_puppet
+    end
+  end
+
+  def unlock
+    if @agent.locked?
+      enable_puppet
+      `pgrep puppet || puppet agent`
+    else
+      Log.to_terminal(NOT_LOCKED)
+    end
+  end
+
+  def extend_lock
+    # Extend the time for the automatic unlock
+    if @agent.locked?
+      AtJob.remove(@agent.job_id)
+      disable_puppet
+    else
+      Log.to_terminal(NOT_LOCKED)
+    end
+  end
+
+  def info
+    # Info about current lock
+    if @agent.locked?
+      message = 'Puppet lock status information:'
+      message << "\n"
+      message << ' Reason: ' << @agent.disabled_message.to_s || MISSING_MESSAGE
+      message << "\n"
+      message << ' Time of unlock: ' << @agent.end_time.to_s || MISSING_MESSAGE
+      Log.to_terminal(message)
+    else
+      Log.to_terminal(NOT_LOCKED)
+    end
+  end
+
+  # validate the lock file and
+  def validate
+    exit! @agent.validate
+  end
+
+  def version
+    Log.to_terminal(%(#{PS_NAME} #{PS_VERSION}))
+  end
+end # EOF class PuppetStopper
+
+# -----------------------------------------------------------------------------
+
+class Options
+  EXCEPTIONS = [
+    OptionParser::InvalidArgument,
+    OptionParser::AmbiguousArgument,
+    OptionParser::NeedlessArgument,
+    OptionParser::MissingArgument
+  ].freeze
+
+  def self.parse
+    Config.action = nil
+    Config.days = 1
+    evaluate
+  end
+
+  private
+
+  def self.options
+    @optparse = OptionParser.new do |opts|
+      opts.banner = 'Usage: puppet-stopper [options]'
+
+      opts.on('-l"', '--lock COMMENT', String,
+        'Locks puppet agent for 1 day (default).',
+        'Unlocks automatically after 1 day.') do |comment|
+        Config.action  = :lock
+        Config.message = comment.to_s.gsub(%r{^['"]|['"]$}, '')
+      end
+
+      opts.on('-u', '--unlock',
+        'Unlocks puppet agent immediately') do
+        Config.action = :unlock
+      end
+
+      opts.on('-e', '--extend',
+        'Extends an existing lock. Default is 1 day') do
+        Config.action = :extend
+      end
+
+      opts.on('-d', '--days NUMBER', Numeric,
+        'Locks or extend for n days [1-30]') do |days|
+        if days.to_i < 1 || days.to_i > 30
+          raise OptionParser::InvalidArgument,
+            'Only numbers between 1 and 30 are valid'
+        end
+        Config.days = days || 1
+      end
+
+      opts.on('-i', '--info',
+        'Print info about an existing lock') do
+        Config.action = :info
+      end
+
+      opts.on('-V', '--version',
+        'Display the version number') do
+        Config.action = :version
+      end
+
+      opts.on('--statedir PATH', String,
+        'Use path as puppet statedir') do |path|
+        path = File.expand_path(path)
+        unless File.exist?(path)
+          raise OptionParser::InvalidArgument,
+            "The path #{path} does not exist"
+        end
+        Config.state_dir = path
+      end
+
+      opts.on('--validate',
+        'Validate the lock file for compliance') do
+        Config.action = :validate
+      end
+
+      opts.on('-h', '--help',
+        'Display this screen') do
+        puts opts
+        exit
+      end
+    end
+    @optparse
+  end
+
+  def self.error_message(err, exit_code)
+    puts
+    puts err
+    puts
+    puts @optparse
+    exit exit_code
+  end
+
+  def self.evaluate
+    begin
+      options.parse!
+      unless Config.action
+        puts @optparse
+        exit 1
+      end
+    rescue OptionParser::AmbiguousOption, OptionParser::InvalidOption => err
+      error_message(err, 11)
+    rescue *EXCEPTIONS => err
+      error_message(err, 12)
+    end
+  end
+end
+
+# -----------------------------------------------------------------------------
+# MAIN
+# -----------------------------------------------------------------------------
+
+User.root?.or_exit!
+Config = OpenStruct.new
+Options.parse
+locker = PuppetStopper.new
+locker.run
