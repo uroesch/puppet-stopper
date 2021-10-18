@@ -1,0 +1,70 @@
+= Puppet Stopper
+
+A script to stop puppet enforcing a message and setting an `at` job to reactive 
+the agent after a specified period or max. 30 days.
+
+== Usage 
+
+[source,console]
+----
+Usage: puppet-stopper [options]
+    -l, --lock COMMENT               Locks puppet agent for 1 day (default).
+                                     Unlocks automatically after 1 day.
+    -u, --unlock                     Unlocks puppet agent immediately
+    -e, --extend                     Extends an existing lock. Default is 1 day
+    -d, --days NUMBER                Locks or extend for n days [1-30]
+    -i, --info                       Print info about an existing lock
+    -V, --version                    Display the version number
+        --validate                   Validate the lock file for compliance
+    -h, --help                       Display this screen
+----
+
+== Examples 
+
+.Lock puppet for 24 hours
+[source,console]
+----
+# puppet-stopper --lock "Evaluating new hosts file"
+
+puppet is locked with reason 'Testing new hosts file' and will automatically unlock on 2021-10-19 16:25:13 +0200
+
+----
+
+.Extend outage to one week
+[source,console]
+----
+# puppet-stopper --extend --days 7
+
+puppet is locked with reason 'Testing new hosts file' and will automatically unlock on 2021-10-25 16:26:43 +0200
+
+----
+
+.Show info about lock
+[source,console]
+----
+# puppet-stopper --info
+
+Puppet lock status information:
+ Reason: Testing new hosts file
+ Time of unlock: 2021-10-25 16:26:43 +0200
+
+----
+
+.Unlock 
+[source,console]
+----
+# puppet-stopper --unlock
+
+puppet has been unlocked
+
+----
+
+.Show info when not locked
+[source,console]
+----
+# puppet-stopper --info
+
+
+puppet is not locked
+
+----
