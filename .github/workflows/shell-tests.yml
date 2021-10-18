@@ -30,9 +30,9 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Bats tests
+    - name: Install bats
       shell: bash
-      run: which bats 
+      run: sudo apt-get -y install bats
 
     - name: Bats tests
       shell: bash
