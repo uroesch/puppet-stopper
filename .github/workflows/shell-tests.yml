@@ -32,4 +32,8 @@ jobs:
 
     - name: Bats tests
       shell: bash
+      run: which bats 
+
+    - name: Bats tests
+      shell: bash
       run: rake test
