@@ -110,7 +110,7 @@ class AgentLocker
     @state_dir = Config.state_dir if Config.state_dir
     return @state_dir if @state_dir
     STATE_DIR.each do |state_dir|
-      next unless File.exist?(state_path)
+      next unless File.exist?(state_dir)
       @state_dir = state_dir
       break
     end
