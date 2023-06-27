@@ -100,8 +100,7 @@ class AgentLocker
   end
 
   def lock_file
-    return @lock_file if @lock_file
-    @lock_file = File.join(state_dir, LOCKFILE_BASE)
+    @lock_file ||= File.join(state_dir, LOCKFILE_BASE)
   end
 
   private
@@ -111,8 +110,7 @@ class AgentLocker
     return @state_dir if @state_dir
     STATE_DIR.each do |state_dir|
       next unless File.exist?(state_dir)
-      @state_dir = state_dir
-      break
+      return @state_dir = state_dir
     end
   end
 end
