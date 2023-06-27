@@ -38,7 +38,8 @@ class AgentLocker
 
   include FileUtils
 
-  LOCKFILE_BASE = 'agent_disabled.lock'.freeze
+  LOCKFILE_BASE    = 'agent_disabled.lock'.freeze
+  DEFAULT_MESSAGES = [ '', 'reason not specified' ]
 
   STATE_DIR = %w( 
     /var/lib/puppet/state
@@ -65,7 +66,7 @@ class AgentLocker
   # This function is for scripts requiring exit codes.
   def validate
     return 0 unless locked?
-    return 101 if disabled_message.empty?
+    return 101 if DEFAULT_MESSAGES.grep(disabled_message)
     return 102 if end_time.to_s.empty?
     return 0
   end
