@@ -66,7 +66,7 @@ class AgentLocker
   # This function is for scripts requiring exit codes.
   def validate
     return 0 unless locked?
-    return 101 if DEFAULT_MESSAGES.inlclude?(disabled_message)
+    return 101 if DEFAULT_MESSAGES.include?(disabled_message)
     return 102 if end_time.to_s.empty?
     return 103 if job_id.to_s.empty?
     return 0
