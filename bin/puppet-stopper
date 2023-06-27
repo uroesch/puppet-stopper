@@ -10,7 +10,7 @@ require 'ostruct'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-PS_VERSION = '2021-10-19'.freeze
+PS_VERSION = '2023-06-27'.freeze
 BASE_DIR   = File.expand_path(File.join(File.dirname(__FILE__), '..'))
 
 # User check checks for root
@@ -68,6 +68,7 @@ class AgentLocker
     return 0 unless locked?
     return 101 if DEFAULT_MESSAGES.grep(disabled_message)
     return 102 if end_time.to_s.empty?
+    return 103 if job_id.to_s.empty?
     return 0
   end
 
