@@ -3,27 +3,29 @@
 load helpers
 
 @test "puppet-stopper: Common option --help" {
-  puppet-stopper --help |& grep -- "--lock COMMENT"
-  puppet-stopper --help |& grep -- "--unlock"
-  puppet-stopper --help |& grep -- "--extend"
-  puppet-stopper --help |& grep -- "--days NUMBER"
-  puppet-stopper --help |& grep -- "--info"
-  puppet-stopper --help |& grep -- "--version"
-  puppet-stopper --help |& grep -- "--statedir"
-  puppet-stopper --help |& grep -- "--validate"
-  puppet-stopper --help |& grep -- "--help"
+  output=$(puppet-stopper --help 2>&1)
+  [[ ${output} =~ ' -d, --days NUMBER ' ]]
+  [[ ${output} =~ ' -e, --extend ' ]]
+  [[ ${output} =~ ' -h, --help ' ]]
+  [[ ${output} =~ ' -i, --info ' ]]
+  [[ ${output} =~ ' -l, --lock COMMENT' ]]
+  [[ ${output} =~ '     --statedir ' ]]
+  [[ ${output} =~ ' -u, --unlock ' ]]
+  [[ ${output} =~ '     --validate  ' ]]
+  [[ ${output} =~ ' -V, --version ' ]]
 }
 
 @test "puppet-stopper: Common option -h" {
-  puppet-stopper -h |& grep -- "--lock COMMENT"
-  puppet-stopper -h |& grep -- "--unlock"
-  puppet-stopper -h |& grep -- "--extend"
-  puppet-stopper -h |& grep -- "--days NUMBER"
-  puppet-stopper -h |& grep -- "--info"
-  puppet-stopper -h |& grep -- "--version"
-  puppet-stopper -h |& grep -- "--statedir"
-  puppet-stopper -h |& grep -- "--validate"
-  puppet-stopper -h |& grep -- "--help"
+  output=$(puppet-stopper -h 2>&1)
+  [[ ${output} =~ ' -d, --days NUMBER ' ]]
+  [[ ${output} =~ ' -e, --extend ' ]]
+  [[ ${output} =~ ' -h, --help ' ]]
+  [[ ${output} =~ ' -i, --info ' ]]
+  [[ ${output} =~ ' -l, --lock COMMENT' ]]
+  [[ ${output} =~ '     --statedir ' ]]
+  [[ ${output} =~ ' -u, --unlock ' ]]
+  [[ ${output} =~ '     --validate  ' ]]
+  [[ ${output} =~ ' -V, --version ' ]]
 }
 
 @test "puppet-stopper: Common option --version" {
