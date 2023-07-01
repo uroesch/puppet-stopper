@@ -68,3 +68,12 @@ puppet has been unlocked
 puppet is not locked
 
 ----
+
+.Error meessage when `at` is not prensent
+[source,console]
+----
+# puppet-stopper --lock 'Lock when at is missing'
+
+Failed to lock puppet. AtJob failed with exit status 127
+
+----
