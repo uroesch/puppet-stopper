@@ -10,7 +10,7 @@ require 'ostruct'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-PS_VERSION = '2023-06-27'.freeze
+PS_VERSION = '2023-07-02'.freeze
 BASE_DIR   = File.expand_path(File.join(File.dirname(__FILE__), '..'))
 
 # User check checks for root
@@ -41,7 +41,7 @@ class AgentLocker
   LOCKFILE_BASE    = 'agent_disabled.lock'.freeze
   DEFAULT_MESSAGES = [ '', 'reason not specified' ]
 
-  STATE_DIR = %w( 
+  STATE_DIR = %w(
     /var/lib/puppet/state
     /opt/puppetlabs/puppet/cache/state
   )
@@ -190,7 +190,7 @@ module AtJob
     end
 
     def remove(job_id)
-      if job_id
+      if job_id && job_exist?(job_id)
         `atrm #{job_id}`
         return nil unless $?.success?
       end
@@ -201,6 +201,15 @@ module AtJob
     def format_time(time)
       time = Time.parse(time) if String === time
       time.strftime(AT_TIME_FORMAT)
+    end
+
+    def job_exist?(job_id)
+      begin
+        `atq #{job_id}`
+        return $?.success?
+      rescue
+        return false
+      end
     end
 
     def job_id(output)
@@ -231,12 +240,13 @@ class PuppetStopper
 
   def run
     case Config.action
-    when :lock     then lock
-    when :unlock   then unlock
-    when :extend   then extend_lock
-    when :info     then info
-    when :validate then validate
-    when :version  then version
+    when :lock           then lock
+    when :unlock         then unlock
+    when :unlock_expired then unlock_expired
+    when :extend         then extend_lock
+    when :info           then info
+    when :validate       then validate
+    when :version        then version
     end
   end
 
@@ -276,6 +286,14 @@ class PuppetStopper
       )
     else
       disable_puppet
+    end
+  end
+
+  def unlock_expired
+    if @agent.locked?
+      unlock if Time.parse(@agent.end_time) <= Time.now
+    else
+      Log.to_terminal(NOT_LOCKED)
     end
   end
 
@@ -345,20 +363,10 @@ class Options
       opts.banner = 'Usage: puppet-stopper [options]'
 
       opts.on('-l"', '--lock COMMENT', String,
-        'Locks puppet agent for 1 day (default).',
-        'Unlocks automatically after 1 day.') do |comment|
+        'Locks puppet agent for 1 day (default)',
+        'Unlocks automatically after 1 day') do |comment|
         Config.action  = :lock
         Config.message = comment.to_s.gsub(%r{^['"]|['"]$}, '')
-      end
-
-      opts.on('-u', '--unlock',
-        'Unlocks puppet agent immediately') do
-        Config.action = :unlock
-      end
-
-      opts.on('-e', '--extend',
-        'Extends an existing lock. Default is 1 day') do
-        Config.action = :extend
       end
 
       opts.on('-d', '--days NUMBER', Numeric,
@@ -370,14 +378,20 @@ class Options
         Config.days = days || 1
       end
 
+      opts.on('-e', '--extend',
+        'Extends an existing lock. Default is 1 day') do
+        Config.action = :extend
+      end
+
+      opts.on('-h', '--help',
+        'Display this screen') do
+        puts opts
+        exit
+      end
+
       opts.on('-i', '--info',
         'Print info about an existing lock') do
         Config.action = :info
-      end
-
-      opts.on('-V', '--version',
-        'Display the version number') do
-        Config.action = :version
       end
 
       opts.on('--statedir PATH', String,
@@ -390,15 +404,24 @@ class Options
         Config.state_dir = path
       end
 
+      opts.on('-u', '--unlock',
+        'Unlocks puppet agent immediately') do
+        Config.action = :unlock
+      end
+
+      opts.on('-U', '--unlock-expired',
+        'Unlocks puppet agent if end time has expired') do
+        Config.action = :unlock_expired
+      end
+
       opts.on('--validate',
         'Validate the lock file for compliance') do
         Config.action = :validate
       end
 
-      opts.on('-h', '--help',
-        'Display this screen') do
-        puts opts
-        exit
+      opts.on('-V', '--version',
+        'Display the version number') do
+        Config.action = :version
       end
     end
     @optparse
