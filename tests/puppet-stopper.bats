@@ -11,6 +11,7 @@ load helpers
   [[ ${output} =~ ' -l, --lock COMMENT' ]]
   [[ ${output} =~ '     --statedir ' ]]
   [[ ${output} =~ ' -u, --unlock ' ]]
+  [[ ${output} =~ ' -U, --unlock-expired ' ]]
   [[ ${output} =~ '     --validate  ' ]]
   [[ ${output} =~ ' -V, --version ' ]]
 }
@@ -24,6 +25,7 @@ load helpers
   [[ ${output} =~ ' -l, --lock COMMENT' ]]
   [[ ${output} =~ '     --statedir ' ]]
   [[ ${output} =~ ' -u, --unlock ' ]]
+  [[ ${output} =~ ' -U, --unlock-expired ' ]]
   [[ ${output} =~ '     --validate  ' ]]
   [[ ${output} =~ ' -V, --version ' ]]
 }

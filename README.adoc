@@ -1,25 +1,27 @@
 = Puppet Stopper
 
-A script to stop puppet enforcing a message and setting an `at` job to reactive 
+A script to stop puppet enforcing a message and setting an `at` job to reactive
 the agent after a specified period or max. 30 days.
 
-== Usage 
+== Usage
 
 [source,console]
 ----
 Usage: puppet-stopper [options]
-    -l, --lock COMMENT               Locks puppet agent for 1 day (default).
-                                     Unlocks automatically after 1 day.
-    -u, --unlock                     Unlocks puppet agent immediately
-    -e, --extend                     Extends an existing lock. Default is 1 day
+    -l, --lock COMMENT               Locks puppet agent for 1 day (default)
+                                     Unlocks automatically after 1 day
     -d, --days NUMBER                Locks or extend for n days [1-30]
-    -i, --info                       Print info about an existing lock
-    -V, --version                    Display the version number
-        --validate                   Validate the lock file for compliance
+    -e, --extend                     Extends an existing lock. Default is 1 day
     -h, --help                       Display this screen
+    -i, --info                       Print info about an existing lock
+        --statedir PATH              Use path as puppet statedir
+    -u, --unlock                     Unlocks puppet agent immediately
+    -U, --unlock-expired             Unlocks puppet agent if end time has expired
+        --validate                   Validate the lock file for compliance
+    -V, --version                    Display the version number
 ----
 
-== Examples 
+== Examples
 
 .Lock puppet for 24 hours
 [source,console]
@@ -50,7 +52,7 @@ Puppet lock status information:
 
 ----
 
-.Unlock 
+.Unlock
 [source,console]
 ----
 # puppet-stopper --unlock
@@ -69,7 +71,7 @@ puppet is not locked
 
 ----
 
-.Error meessage when `at` is not prensent
+.Error message when `at` is not prensent
 [source,console]
 ----
 # puppet-stopper --lock 'Lock when at is missing'
